@@ -24,23 +24,34 @@ class dataBuilder():
     '''Prepares the important parts of the test dataframe,
     such as gold and input labels.
     '''
-
     def __init__(self, test) -> None:
         self.test_df = pd.read_json(test)
         self._input_tokens()
         self._gold_tags()
 
-    def gen_output_decoder(self, output_list):
-        '''Returns a list without special (<extra_id_.*>) tokens.'''
-        split_token = '<extra_id_\\d*> *'
+    def gen_output_decoder(self, output_list, variant):
+        '''Returns a list without special tokens.'''
+        if variant == 'sentinel':
+            split_token = '<extra_id_\\d*> *'
 
-        return [re.split(split_token, re.sub(f'^{split_token}', '', i)) for
-                i in output_list]
+            return [re.split(split_token, re.sub(f'^{split_token}', '', i)) for
+                    i in output_list]
+        else:
+            new_output_list = []
+            for i in output_list:
+                decode_list = []
+                for i in re.split(' ; ', output_list):
+                    if ':' in i:
+                        decode_list.append(re.split(':', i)[0])
+                    else:
+                        decode_list.append('MISSING')
+                new_output_list.append(decode_list)
+            return new_output_list
 
-    def store(self, lst, name):
+    def store(self, lst, name, variant):
         '''Store a list into the the test data frame and export
         the dataframe into a json file with a given name.'''
-        self.test_df['gen_semtag'] = self.gen_output_decoder(lst)
+        self.test_df['gen_semtag'] = self.gen_output_decoder(lst, variant)
         self.test_df.to_json(name)
 
     def _input_tokens(self):
@@ -106,7 +117,7 @@ class semtagGenerator():
     def generate(self, input_list, prefix):
         '''Returns a list of tagged sentences (generated).'''
         output_list = []
-        for sentence in input:
+        for sentence in input_list:
 
             input_ids = self.tokenizer.encode(
                 "{}: {}".format(prefix, sentence),
@@ -117,7 +128,7 @@ class semtagGenerator():
                                           num_beams=10,
                                           max_length=500).to(self.dev)
             gen_text = self.tokenizer.decode(outputs[0])
-            gen_text = gen_text.replace('<pad>','').replace('</s>','')
+            gen_text = gen_text.replace('<pad>', '').replace('</s>', '')
             gen_text = gen_text.lstrip().rstrip()
 
             output_list.append(gen_text)
@@ -129,22 +140,25 @@ def parsing():
     '''Parses the expected command line arguments.'''
     parser = argparse.ArgumentParser()
 
-    parser.add_argument(
-        '-m',
-        '--model',
-        default='t5-base',
-        type=str,
-        help='Decide on which T5 model to use (default: t5-base)')
-    parser.add_argument(
-        '-om',
-        '--original_model',
-        default='t5-base',
-        type=str,
-        help='Decide on which T5 model to use (default: t5-base)')
+    parser.add_argument('-m', '--model',
+                        default='t5-base',
+                        type=str,
+                        help='Decide on which T5 model '
+                        'to use (default: t5-base)')
+    parser.add_argument('-om', '--original_model',
+                        default='t5-base',
+                        type=str,
+                        help='Decide on which T5 model '
+                        'to use (default: t5-base)')
     parser.add_argument('-mc', '--model_config', default='', type=str,
-                        help='')
+                        help='Give the config that you should download '
+                        'from huggingface.co/<model>/blob/main/config.json')
     parser.add_argument('-ts', '--test_data', default='', type=str,
-                        help='')
+                        help='Use the test data that was created during '
+                        'the training')
+    parser.add_argument('-v', '--variant', default=None,
+                        help='Choose between Sentinel and '
+                        'Original (None) encoding (default: None)')
 
     return parser.parse_args()
 
@@ -168,4 +182,9 @@ def main():
         t5_gen.generate(
             data.test_input,
             prefix='semtag'),
-        f'{output_path}/{timestring}-{original_model}-test_generated.json')
+        f'{output_path}/{timestring}-{original_model}-test_generated.json',
+        variant=args.variant)
+
+
+if __name__ == '__main__':
+    main()

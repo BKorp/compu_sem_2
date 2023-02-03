@@ -42,11 +42,14 @@ def parsing():
     parser.add_argument('-af', '--alternate_file', default=None,
                         help='Set alternative input csv or json '
                              '(default: None)')
+    parser.add_argument('-v', '--variant', default=None,
+                        help='Choose between Sentinel and '
+                        'Original (None) encoding (default: None)')
 
     return parser.parse_args()
 
 
-def data_prep(alternate_file=None):
+def data_prep(alternate_file=None, variant=None):
     '''Extracts data or loads from existing files.'''
     output_path = f'./data'
     Path(output_path).mkdir(parents=True, exist_ok=True)
@@ -75,25 +78,29 @@ def data_prep(alternate_file=None):
              'to': list,
              'semtag': list}).reset_index()
 
-        print(grouped_sentences.head())
-
         in_token = []
         out_semtag = []
-        for index, data in grouped_sentences.iterrows():
-            cur_token = []
-            cur_semtag = []
-            cur_extra_id = -1
-            for word in data[1]:
-                cur_extra_id += 1
-                cur_token.append('<extra_id_{}> {} '.format(
-                    cur_extra_id,
-                    word))
-                cur_semtag.append('<extra_id_{}> {} '.format(
-                    cur_extra_id,
-                    data[-1][data[1].index(word)]))
+        if variant == 'sentinel':
+            for index, data in grouped_sentences.iterrows():
+                cur_token = []
+                cur_semtag = []
+                cur_extra_id = -1
+                for word in data[1]:
+                    cur_extra_id += 1
+                    cur_token.append('<extra_id_{}> {} '.format(
+                        cur_extra_id,
+                        word))
+                    cur_semtag.append('<extra_id_{}> {} '.format(
+                        cur_extra_id,
+                        data[-1][data[1].index(word)]))
 
-            in_token.append(cur_token)
-            out_semtag.append(cur_semtag)
+                in_token.append(cur_token)
+                out_semtag.append(cur_semtag)
+
+        else:
+            for index, row in grouped_sentences.iterrows():
+                out_semtag.append([f'{row.semtag[i]}: {row.token[i]}' for i in range(len(row.token))])
+                in_token.append(row.token)
 
         grouped_sentences['in_token'] = in_token
         grouped_sentences['out_semtag'] = out_semtag
@@ -147,7 +154,8 @@ def train_one_epoch(model,
                     tokenizer,
                     optimizer,
                     dev,
-                    padding):
+                    padding,
+                    variant=None):
     '''Go through one training loop.'''
     running_loss = 0
 
@@ -157,8 +165,12 @@ def train_one_epoch(model,
         new_df = train_df[i * batch_size:i * batch_size + batch_size]
         for indx, row in new_df.iterrows():
             train_prefix = row['prefix']
-            train_text = str(''.join(row['input_text']))
-            target_text = str(''.join(row['target_text']))
+            if variant == 'sentinel':
+                train_text = str(''.join(row['input_text']))
+                target_text = str(''.join(row['target_text']))
+            else:
+                train_text = str(''.join(row['input_text']))
+                target_text = str(' ; '.join(row['target_text']))
             input = f'{train_prefix}: ' + train_text
             labels = target_text
             inputbatch.append(input)
@@ -202,7 +214,8 @@ def get_validation_loss(model,
                         batch_size,
                         tokenizer,
                         dev,
-                        padding):
+                        padding,
+                        variant=None):
     '''Go through one validation loop.'''
     running_loss = 0
 
@@ -212,8 +225,12 @@ def get_validation_loss(model,
         new_df = dev_df[i * batch_size:i * batch_size + batch_size]
         for indx, row in new_df.iterrows():
             dev_prefix = row['prefix']
-            dev_text = str(''.join(row['input_text']))
-            target_text = str(''.join(row['target_text']))
+            if variant == 'sentinel':
+                dev_text = str(''.join(row['input_text']))
+                target_text = str(''.join(row['target_text']))
+            else:
+                dev_text = str(''.join(row['input_text']))
+                target_text = str(' ; '.join(row['target_text']))
             input = f'{dev_prefix}: ' + dev_text
             labels = target_text
             inputbatch.append(input)
@@ -249,7 +266,8 @@ def model_trainer(train_df,
                   padding=400,
                   model='t5-small',
                   earlyst_limit=None,
-                  extra_tokens=None):
+                  extra_tokens=None,
+                  variant=None):
     '''Train a given model.
 
     Keyword arguments:
@@ -318,7 +336,8 @@ def model_trainer(train_df,
                                                          tokenizer,
                                                          optimizer,
                                                          dev,
-                                                         padding)
+                                                         padding,
+                                                         variant)
 
         model.train(False)
 
@@ -328,9 +347,9 @@ def model_trainer(train_df,
                                               num_of_dev_batches,
                                               batch_size,
                                               tokenizer,
-                                              optimizer,
                                               dev,
-                                              padding)
+                                              padding,
+                                              variant)
 
         print('Epoch {}/{}\nloss: {} - val_loss: {}'.format(epoch,
                                                             num_of_epochs,
@@ -350,9 +369,8 @@ def model_trainer(train_df,
     return best_model
 
 
-def model_serializer(model, file_name, model_name, timestring):
+def model_serializer(model, output_name, model_name, timestring):
     '''Saves the trained/finetuned model'''
-    output_name = file_name[:-4]
     path_folder = './models'
     Path(path_folder).mkdir(parents=True, exist_ok=True)
 
@@ -365,8 +383,14 @@ def main():
     args = parsing()
     timestring = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 
+    print(f'Variant: {args.variant}')
     file_name = 'semtagging'
-    train_df, dev_df = data_prep(args.alternate_file)
+    if args.variant == 'sentinel':
+        file_name += '_sentinel'
+    else:
+        file_name += '_original'
+
+    train_df, dev_df = data_prep(args.alternate_file, variant=args.variant)
 
     model = model_trainer(train_df,
                           dev_df,
@@ -376,7 +400,8 @@ def main():
                           padding=args.padding,
                           model=args.model,
                           earlyst_limit=args.early_stopping,
-                          extra_tokens=['~', 'ø'])
+                          extra_tokens=['~', 'ø'],
+                          variant=args.variant)
 
     original_model = args.model
     if '/' in original_model:
