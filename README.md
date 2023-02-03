@@ -11,7 +11,7 @@ Requirements to run the project can be found in `requirements.txt`.
 
 ## 1.2. The BERT-based models
 
-To run BERT (bert-base-uncased), RoBERTa (roberta-base), or BERT multilingual (bert-base-multilingual-uncased), download the BERT_Semantic_Tagger.ipyn notebook file. This notebook only takes the PMB data file as input, which can be either of the two in the data folder (1. 'sem-pmb_4_0_0-gold.csv', 2. 'sem-pmb_4_0_0-all-gold.csv'). The first file is only the English PMB data, which can be used with either BERT or RoBERTa, the second file is multilingual PMB data and can only be used with BERT multilingual.
+To run BERT (bert-base-uncased), RoBERTa (roberta-base), or BERT multilingual (bert-base-multilingual-uncased), download the BERT_Semantic_Tagger.ipynb notebook file. This notebook only takes the PMB data file as input, which can be either of the two in the data folder (1. 'sem-pmb_4_0_0-gold.csv', 2. 'sem-pmb_4_0_0-all-gold.csv'). The first file is only the English PMB data, which can be used with either BERT or RoBERTa, the second file is multilingual PMB data and can only be used with BERT multilingual.
 
 Each model has already been run with our data, and the results are displayed in the output files. To re-run the notebook, please use a Jupyter Notebook or Google Colab environment or convert the notebook to a .py format to run with your own preferred environment. 
 
